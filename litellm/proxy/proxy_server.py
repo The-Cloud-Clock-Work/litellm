@@ -13604,6 +13604,10 @@ async def dynamic_mcp_route(mcp_server_name: str, request: Request):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
+# AntonCore: Mount MCP app at both /mcp and /mcp/ to avoid Starlette
+# trailing-slash 307 redirect that uses http:// internally, which
+# Claude.ai refuses to follow (HTTP downgrade from HTTPS).
+app.mount(path=BASE_MCP_ROUTE + "/", app=mcp_app)
 app.mount(path=BASE_MCP_ROUTE, app=mcp_app)
 app.include_router(mcp_rest_endpoints_router)
 app.include_router(mcp_discoverable_endpoints_router)
