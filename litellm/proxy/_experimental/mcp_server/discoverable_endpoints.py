@@ -308,9 +308,12 @@ async def register_client_with_server(
     }
 
     if mcp_server.client_id and mcp_server.client_secret:
+        # AntonCore: Return real client_id (needed for authorize URL) but
+        # dummy client_secret. LiteLLM uses its own stored secret for
+        # the upstream token exchange — no need to expose it here.
         return {
             "client_id": mcp_server.client_id,
-            "client_secret": mcp_server.client_secret,
+            "client_secret": "server_managed",
             "redirect_uris": [f"{request_base_url}/callback"],
         }
 
