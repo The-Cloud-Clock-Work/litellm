@@ -227,15 +227,6 @@ async def exchange_token_with_server(
     )
 
     if grant_type == "refresh_token":
-        # AntonCore: For refresh_token grant, return virtual key directly
-        # without hitting upstream — the virtual key doesn't expire.
-        virtual_key = os.environ.get("MCP_OAUTH_VIRTUAL_KEY")
-        if virtual_key:
-            return JSONResponse({
-                "access_token": virtual_key,
-                "token_type": "Bearer",
-                "expires_in": 31536000,
-            })
         if not refresh_token:
             raise HTTPException(
                 status_code=400,
