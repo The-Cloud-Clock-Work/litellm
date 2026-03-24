@@ -183,10 +183,13 @@ async def authorize_with_server(
         "state": encoded_state,
         "response_type": response_type or "code",
     }
-    if scope:
-        params["scope"] = scope
-    elif mcp_server.scopes:
+    # AntonCore: Always use server-configured scopes for the upstream OAuth
+    # provider. MCP clients (e.g. Claude.ai) may send their own scope values
+    # like "claudeai" which are MCP-level scopes, not Google OAuth scopes.
+    if mcp_server.scopes:
         params["scope"] = " ".join(mcp_server.scopes)
+    elif scope:
+        params["scope"] = scope
 
     if code_challenge:
         params["code_challenge"] = code_challenge
