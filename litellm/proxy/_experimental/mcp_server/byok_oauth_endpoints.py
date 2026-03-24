@@ -533,34 +533,11 @@ def _build_authorize_html(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/.well-known/oauth-authorization-server", include_in_schema=False)
-async def oauth_authorization_server_metadata(request: Request) -> JSONResponse:
-    """RFC 8414 Authorization Server Metadata for the BYOK OAuth flow."""
-    base_url = get_request_base_url(request)
-    return JSONResponse(
-        {
-            "issuer": base_url,
-            "authorization_endpoint": f"{base_url}/v1/mcp/oauth/authorize",
-            "token_endpoint": f"{base_url}/v1/mcp/oauth/token",
-            "response_types_supported": ["code"],
-            "grant_types_supported": ["authorization_code"],
-            "code_challenge_methods_supported": ["S256"],
-        }
-    )
-
-
-@router.get("/.well-known/oauth-protected-resource", include_in_schema=False)
-async def oauth_protected_resource_metadata(request: Request) -> JSONResponse:
-    """RFC 9728 Protected Resource Metadata pointing back at this server."""
-    base_url = get_request_base_url(request)
-    return JSONResponse(
-        {
-            "resource": base_url,
-            "authorization_servers": [base_url],
-        }
-    )
-
-
+# AntonCore: Removed root /.well-known/oauth-authorization-server and
+# /.well-known/oauth-protected-resource from BYOK router.
+# These routes shadowed the MCP discoverable_endpoints.py handlers
+# (which support proper Google OAuth redirect for Claude.ai).
+# BYOK endpoints at /v1/mcp/oauth/* are preserved.
 # ---------------------------------------------------------------------------
 # Authorization endpoint — GET (show form) and POST (process form)
 # ---------------------------------------------------------------------------
