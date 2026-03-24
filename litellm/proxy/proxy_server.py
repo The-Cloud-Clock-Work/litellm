@@ -13608,6 +13608,18 @@ async def dynamic_mcp_route(mcp_server_name: str, request: Request):
 # trailing-slash 307 redirect that uses http:// internally, which
 # Claude.ai refuses to follow (HTTP downgrade from HTTPS).
 app.mount(path=BASE_MCP_ROUTE + "/", app=mcp_app)
-app.mount(path=BASE_MCP_ROUTE, app=mcp_app)
+# AntonCore: Original mount at /mcp caused 307 http:// redirect.
+# Only mount at /mcp/ (with slash). Add explicit /mcp handler below.
+# app.mount(path=BASE_MCP_ROUTE, app=mcp_app)  # disabled
 app.include_router(mcp_rest_endpoints_router)
 app.include_router(mcp_discoverable_endpoints_router)
+
+# AntonCore: Handle /mcp (no trailing slash) by forwarding to mcp_app.
+# Without this, Starlette returns 307 redirect to /mcp/ using http://
+# which Claude.ai refuses to follow (HTTPS→HTTP downgrade = 502).
+@app.api_route("/mcp", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"], include_in_schema=False)
+async def mcp_no_trailing_slash(request: Request):
+    from starlette.responses import RedirectResponse
+    from litellm.proxy._experimental.mcp_server.discoverable_endpoints import get_request_base_url
+    base = get_request_base_url(request)
+    return RedirectResponse(url=f"{base}/mcp/", status_code=307)
