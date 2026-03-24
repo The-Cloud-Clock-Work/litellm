@@ -152,9 +152,29 @@ class MCPRequestHandler:
                 else:
                     raise
         else:
-            validated_user_api_key_auth = await user_api_key_auth(
-                api_key=litellm_api_key, request=request
-            )
+            # AntonCore Patch 1: Allow unauthenticated requests through so the
+            # OAuth challenge handler in server.py can respond with 401 +
+            # WWW-Authenticate header for RFC 9728 compliant OAuth discovery.
+            try:
+                validated_user_api_key_auth = await user_api_key_auth(
+                    api_key=litellm_api_key, request=request
+                )
+            except HTTPException as e:
+                if e.status_code in (401, 403):
+                    verbose_logger.debug(
+                        "MCP: No auth header, allowing through for OAuth challenge"
+                    )
+                    validated_user_api_key_auth = UserAPIKeyAuth()
+                else:
+                    raise
+            except ProxyException as e:
+                if str(e.code) in ("401", "403"):
+                    verbose_logger.debug(
+                        "MCP: No auth header, allowing through for OAuth challenge"
+                    )
+                    validated_user_api_key_auth = UserAPIKeyAuth()
+                else:
+                    raise
 
         return (
             validated_user_api_key_auth,

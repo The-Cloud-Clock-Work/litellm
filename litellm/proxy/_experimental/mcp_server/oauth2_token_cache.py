@@ -166,5 +166,17 @@ async def resolve_mcp_auth(
     if mcp_auth_header:
         return mcp_auth_header
     if server.has_client_credentials:
-        return await mcp_oauth2_token_cache.async_get_token(server)
+        # AntonCore Patch 2: Google OAuth doesn't support client_credentials
+        # grant for web apps. Catch failure and fall through to static token.
+        try:
+            token = await mcp_oauth2_token_cache.async_get_token(server)
+            if token is not None:
+                return token
+        except (ValueError, Exception) as e:
+            verbose_logger.debug(
+                "OAuth2 client_credentials failed for %s: %s, "
+                "falling back to static authentication_token",
+                server.server_id,
+                str(e),
+            )
     return server.authentication_token

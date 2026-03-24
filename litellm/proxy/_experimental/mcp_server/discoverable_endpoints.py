@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
@@ -142,7 +143,7 @@ def _resolve_oauth2_server_for_root_endpoints(
 
     registry = global_mcp_server_manager.get_filtered_registry(client_ip=client_ip)
     oauth2_servers = [s for s in registry.values() if s.auth_type == MCPAuth.oauth2]
-    if len(oauth2_servers) == 1:
+    if len(oauth2_servers) >= 1:
         return oauth2_servers[0]
     return None
 
@@ -223,6 +224,15 @@ async def exchange_token_with_server(
     )
 
     if grant_type == "refresh_token":
+        # AntonCore: For refresh_token grant, return virtual key directly
+        # without hitting upstream — the virtual key doesn't expire.
+        virtual_key = os.environ.get("MCP_OAUTH_VIRTUAL_KEY")
+        if virtual_key:
+            return JSONResponse({
+                "access_token": virtual_key,
+                "token_type": "Bearer",
+                "expires_in": 31536000,
+            })
         if not refresh_token:
             raise HTTPException(
                 status_code=400,
@@ -266,10 +276,17 @@ async def exchange_token_with_server(
     token_response = response.json()
     access_token = token_response["access_token"]
 
+    # AntonCore: Replace upstream provider token with LiteLLM virtual key
+    # so Claude.ai receives a key that LiteLLM can validate on subsequent
+    # MCP requests, instead of the raw upstream OAuth token.
+    virtual_key = os.environ.get("MCP_OAUTH_VIRTUAL_KEY")
+    if virtual_key:
+        access_token = virtual_key
+
     result = {
         "access_token": access_token,
         "token_type": token_response.get("token_type", "Bearer"),
-        "expires_in": token_response.get("expires_in", 3600),
+        "expires_in": 31536000 if virtual_key else token_response.get("expires_in", 3600),
     }
 
     if "refresh_token" in token_response and token_response["refresh_token"]:
@@ -297,7 +314,11 @@ async def register_client_with_server(
     }
 
     if mcp_server.client_id and mcp_server.client_secret:
-        return dummy_return
+        return {
+            "client_id": mcp_server.client_id,
+            "client_secret": mcp_server.client_secret,
+            "redirect_uris": [f"{request_base_url}/callback"],
+        }
 
     if mcp_server.authorization_url is None:
         raise HTTPException(
@@ -510,6 +531,13 @@ def _build_oauth_protected_resource_response(
 
     # When no server name provided, try to resolve the single OAuth2 server
     if mcp_server_name is None:
+        # AntonCore Patch 5: If client already has a Bearer token (Claude Code),
+        # return 404 to prevent the SDK from forcing an OAuth dance.
+        # Only return OAuth metadata for unauthenticated clients (Claude.ai).
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            raise HTTPException(status_code=404, detail="Not found")
+
         resolved = _resolve_oauth2_server_for_root_endpoints()
         if resolved:
             mcp_server_name = resolved.server_name or resolved.name
@@ -626,6 +654,11 @@ def _build_oauth_authorization_server_response(
 
     # When no server name provided, try to resolve the single OAuth2 server
     if mcp_server_name is None:
+        # AntonCore Patch 5: Bearer clients get 404 (see _build_oauth_protected_resource_response)
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            raise HTTPException(status_code=404, detail="Not found")
+
         resolved = _resolve_oauth2_server_for_root_endpoints()
         if resolved:
             mcp_server_name = resolved.server_name or resolved.name

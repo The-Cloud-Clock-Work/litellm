@@ -710,6 +710,12 @@ if MCP_AVAILABLE:
         if filtered_server:
             return list(filtered_server.values())
 
+        # AntonCore Patch 6: When mcp_servers was explicitly provided but
+        # nothing matched, return empty list instead of all servers.
+        # This prevents tool leaking on /mcp/<unknown_name>.
+        if mcp_servers is not None:
+            return []
+
         return allowed_mcp_servers
 
     def _tool_name_matches(tool_name: str, filter_list: List[str]) -> bool:
@@ -2382,25 +2388,32 @@ if MCP_AVAILABLE:
             verbose_logger.debug(
                 f"MCP server auth headers: {list(mcp_server_auth_headers.keys()) if mcp_server_auth_headers else None}"
             )
+            # AntonCore Patch 4: Skip OAuth challenge when Bearer token is a
+            # valid LiteLLM key — the key already grants access to all servers.
+            _has_valid_litellm_key = getattr(user_api_key_auth, "api_key", None) is not None
+            if _has_valid_litellm_key:
+                oauth2_headers = None  # Don't forward as upstream OAuth token
+
             # https://datatracker.ietf.org/doc/html/rfc9728#name-www-authenticate-response
-            for server_name in mcp_servers or []:
-                server = global_mcp_server_manager.get_mcp_server_by_name(
-                    server_name, client_ip=_client_ip
-                )
-                if server and server.auth_type == MCPAuth.oauth2 and not oauth2_headers:
-                    request = StarletteRequest(scope)
-                    base_url = get_request_base_url(request)
-
-                    authorization_uri = (
-                        f"Bearer authorization_uri="
-                        f"{base_url}/.well-known/oauth-authorization-server/{server_name}"
+            if not _has_valid_litellm_key:
+                for server_name in mcp_servers or []:
+                    server = global_mcp_server_manager.get_mcp_server_by_name(
+                        server_name, client_ip=_client_ip
                     )
+                    if server and server.auth_type == MCPAuth.oauth2 and not oauth2_headers:
+                        request = StarletteRequest(scope)
+                        base_url = get_request_base_url(request)
 
-                    raise HTTPException(
-                        status_code=401,
-                        detail="Unauthorized",
-                        headers={"www-authenticate": authorization_uri},
-                    )
+                        authorization_uri = (
+                            f"Bearer authorization_uri="
+                            f"{base_url}/.well-known/oauth-authorization-server/{server_name}"
+                        )
+
+                        raise HTTPException(
+                            status_code=401,
+                            detail="Unauthorized",
+                            headers={"www-authenticate": authorization_uri},
+                        )
 
             # Inject masked debug headers when client sends x-litellm-mcp-debug: true
             _debug_headers = MCPDebug.maybe_build_debug_headers(
