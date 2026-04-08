@@ -2,7 +2,7 @@ name: Build Anton Image
 
 on:
   push:
-    branches: [anton]
+    branches: [anton, anton-v*]
   workflow_dispatch:
 
 permissions:
