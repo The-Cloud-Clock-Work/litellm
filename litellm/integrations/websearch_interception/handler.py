@@ -894,12 +894,23 @@ class WebSearchInterceptionLogger(CustomLogger):
         if max_tokens is None:
             max_tokens = cast(int, kwargs.get("max_tokens", 1024))
 
+        # anton-fix (BerriAI/litellm#26163): Claude Code sends passthrough params
+        # (context_management, output_config, ...) that land in BOTH optional_params
+        # and request_patch.kwargs, so the double-splat raised "got multiple values
+        # for keyword argument" and broke server-side web search on /v1/messages.
+        # Dedup the follow-up kwargs against everything already passed explicitly
+        # or via optional_params (value from optional_params wins).
+        _already_passed = {"max_tokens", "messages", "model", *optional_params.keys()}
+        followup_kwargs = {
+            k: v for k, v in request_patch.kwargs.items() if k not in _already_passed
+        }
+
         response = await anthropic_messages.acreate(
             max_tokens=max_tokens,
             messages=request_patch.messages,
             model=request_patch.model or model,
             **optional_params,
-            **request_patch.kwargs,
+            **followup_kwargs,
         )
 
         # Legacy path: the new path goes through the typed plan + core
